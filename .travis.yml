@@ -1,0 +1,9 @@
+language: go
+
+go:
+  - 1.12
+
+go_import_path: github.com/nukesz/camunda-external-task-client-go
+
+script:
+  - go test -v ./...
