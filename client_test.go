@@ -4,5 +4,6 @@ import "testing"
 
 func TestSubscribe(t *testing.T) {
 	topicName := "externalTopic"
-	Subscribe(topicName)
+	client := Client{"url"}
+	client.Subscribe(topicName)
 }
