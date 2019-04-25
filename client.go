@@ -19,6 +19,13 @@ type Task struct {
 	TopicName  string
 }
 
+type TaskService struct {
+}
+
+func (ts TaskService) Complete(t Task) {
+	fmt.Println("Sending task to camunda")
+}
+
 func (c Client) Complete(id string) {
 	var jsonStr = []byte(`{
 		"workerId": "aWorkerId8",
@@ -99,6 +106,28 @@ func (c Client) FetchAndLock() {
 	fmt.Printf("Tasks: %v", tasks)
 }
 
-func (Client) Subscribe(topicName string) {
+type Subscription struct {
+	topic    string
+	handlers []func(t Task, ts TaskService)
+}
+
+// Handler is attaching handlers to the Subscription
+func (s *Subscription) Handler(handler func(t Task, ts TaskService)) {
+	s.handlers = append(s.handlers, handler)
+}
+
+// Open connects to camunda and start polling the external tasks
+// It will call each handler if there is a new task on the topic
+func (s *Subscription) Open() {
+	for _, handler := range s.handlers {
+		handler(Task{}, TaskService{})
+	}
+}
+
+// Subscribe will create a new Subscription on the given topic
+func (Client) Subscribe(topicName string) *Subscription {
 	fmt.Printf("Subscribing to: %v\n", topicName)
+	return &Subscription{
+		topic: topicName,
+	}
 }
