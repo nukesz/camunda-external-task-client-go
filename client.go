@@ -10,20 +10,25 @@ import (
 )
 
 type Client struct {
-	BaseURL string
+	BaseURL  string
+	Username string
+	Password string
 }
 
 type Task struct {
-	ID         string
-	ActivityID string
-	TopicName  string
+	ID                  string `json:"id"`
+	ActivityID          string
+	TopicName           string
+	ProcessDefinitionID string
 }
 
 type TaskService struct {
+	client *Client
 }
 
 func (ts TaskService) Complete(t Task) {
 	fmt.Println("Sending task to camunda")
+	ts.client.Complete(t.ID)
 }
 
 func (c Client) Complete(id string) {
@@ -41,6 +46,9 @@ func (c Client) Complete(id string) {
 
 	url := fmt.Sprintf("%s/external-task/%s/complete", c.BaseURL, id)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
+	if c.Username != "" {
+		req.SetBasicAuth(c.Username, c.Password)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	httpClient := &http.Client{}
@@ -61,32 +69,41 @@ func (c Client) Complete(id string) {
 }
 
 // ExternalTasks queries for all the external tasks
-func (c Client) ExternalTasks() {
-	resp, err := http.Get(c.BaseURL + "/external-task")
+func (c Client) ExternalTasks(topic string) []Task {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/external-task?topicName=%s&notLocked=true", c.BaseURL, topic), nil)
+	if c.Username != "" {
+		req.SetBasicAuth(c.Username, c.Password)
+	}
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Fatalf("could not get external tasks %v", err)
 	}
 	defer resp.Body.Close()
 
+	fmt.Println(resp)
 	var tasks []Task
 	json.NewDecoder(resp.Body).Decode(&tasks)
 	for _, task := range tasks {
 		fmt.Printf("Task is %+v\n", task)
 	}
+	return tasks
 }
 
-func (c Client) FetchAndLock() {
+func (c Client) FetchAndLock() []Task {
 	var jsonStr = []byte(`{
 		"workerId": "aWorkerId8",
 		"maxTasks": 2,
 		"usePriority": true,
 		"topics": [{"topicName": "goTopic",
-            "lockDuration": 50000,
-            "processDefinitionId": "Process_0axyt3i:1:d70c9c8b-64ef-11e9-87bd-0242ac110005"
+            "lockDuration": 10000
 		}]
 	}`)
 
 	req, err := http.NewRequest("POST", c.BaseURL+"/external-task/fetchAndLock", bytes.NewBuffer(jsonStr))
+	if c.Username != "" {
+		req.SetBasicAuth(c.Username, c.Password)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	httpClient := &http.Client{}
@@ -103,10 +120,12 @@ func (c Client) FetchAndLock() {
 
 	var tasks []Task
 	json.NewDecoder(resp.Body).Decode(&tasks)
-	fmt.Printf("Tasks: %v", tasks)
+	fmt.Printf("FetchAndLock Tasks: %v", tasks)
+	return tasks
 }
 
 type Subscription struct {
+	client   *Client
 	topic    string
 	handlers []func(t Task, ts TaskService)
 }
@@ -119,15 +138,23 @@ func (s *Subscription) Handler(handler func(t Task, ts TaskService)) {
 // Open connects to camunda and start polling the external tasks
 // It will call each handler if there is a new task on the topic
 func (s *Subscription) Open() {
-	for _, handler := range s.handlers {
-		handler(Task{}, TaskService{})
-	}
+	go func() {
+		tasks := s.client.FetchAndLock()
+		fmt.Println(tasks)
+		for _, task := range tasks {
+			for _, handler := range s.handlers {
+				handler(task, TaskService{s.client})
+			}
+		}
+
+	}()
 }
 
 // Subscribe will create a new Subscription on the given topic
-func (Client) Subscribe(topicName string) *Subscription {
+func (c Client) Subscribe(topicName string) *Subscription {
 	fmt.Printf("Subscribing to: %v\n", topicName)
 	return &Subscription{
-		topic: topicName,
+		client: &c,
+		topic:  topicName,
 	}
 }

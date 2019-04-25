@@ -7,16 +7,22 @@ import (
 )
 
 func main() {
+	c := make(chan struct{})
 	// Create a new client to connect to camunda
 	externalClient := client.Client{
-		BaseURL: "http://localhost:8080/engine-rest",
+		BaseURL:  "http://localhost:8080/engine-rest",
+		Username: "demo",
+		Password: "demo",
 	}
 	// externalClient.ExternalTasks()
 	// externalClient.FetchAndLock()
 	//externalClient.Complete("e14186d0-64ef-11e9-87bd-0242ac110005")
-	s := externalClient.Subscribe("myTopic")
+	s := externalClient.Subscribe("goTopic")
 	s.Handler(handle)
 	s.Open()
+
+	fmt.Println("Connection is established...")
+	<-c
 }
 
 func handle(t client.Task, ts client.TaskService) {
